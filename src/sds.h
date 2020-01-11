@@ -30,8 +30,12 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+/* 上面为版权说明 */
 #ifndef __SDS_H
 #define __SDS_H
+
+/* 这个文件实现了一种名为简单动态字符串（simple dynamic string，SDS）的抽象类型，并将SDS
+ 作为Redis的默认字符串表示 */
 
 #define SDS_MAX_PREALLOC (1024*1024)
 const char *SDS_NOINIT;
@@ -42,35 +46,50 @@ const char *SDS_NOINIT;
 
 typedef char *sds;
 
+/**
+ * 设计SDS时加入：
+ * len：	可以使获取长度函数所需的时间复杂度降低到O(1)，还能保证二进制安全（binary-safe），不会像C语言字
+ *			符串一样，因为'\0'而提前结束，能保证读取指定len长度的数据。可以拿来存储任意类型的二进制。
+ * alloc：	用于表示当前SDS对象申请了多少的空间用于存储字符串（不包含头和'\0'）。
+ * flags：	低3位用于表示当前SDS的类型，高5位保留。
+ * buf[]：	灵活数组类型是C99引入的语言特性。即在struct数据类型的最后一个数据成员，可以为一个未指明长度的数组
+ * 			类型。它在这里只是起到一个标记的作用，表示在flags字段后面就是一个字符数组，或者说，它指明了紧跟在
+ * 			flags字段后面的这个字符数组在结构体中的偏移位置。而程序在为header分配的内存的时候，它并不占用内存
+ * 			空间。
+ * 
+ * 注：__attribute__ ((__packed__))的作用就是告诉编译器取消结构在编译过程中的优化对齐，按照实际占用字节数进行对齐。
+ * 注：SDS会在保存的数据末尾自动设置'\0'空字符，这样在做某些字符串比较时，可以直接使用C语言中的字符串比较函数。
+ */
+
 /* Note: sdshdr5 is never used, we just access the flags byte directly.
  * However is here to document the layout of type 5 SDS strings. */
 struct __attribute__ ((__packed__)) sdshdr5 {
-    unsigned char flags; /* 3 lsb of type, and 5 msb of string length */
-    char buf[];
+	unsigned char flags; /* 3 lsb of type, and 5 msb of string length */
+	char buf[];
 };
 struct __attribute__ ((__packed__)) sdshdr8 {
-    uint8_t len; /* used */
-    uint8_t alloc; /* excluding the header and null terminator */
-    unsigned char flags; /* 3 lsb of type, 5 unused bits */
-    char buf[];
+	uint8_t len;			/* used */
+	uint8_t alloc;			/* excluding the header and null terminator */
+	unsigned char flags;	/* 3 lsb of type, 5 unused bits */
+	char buf[];
 };
 struct __attribute__ ((__packed__)) sdshdr16 {
-    uint16_t len; /* used */
-    uint16_t alloc; /* excluding the header and null terminator */
-    unsigned char flags; /* 3 lsb of type, 5 unused bits */
-    char buf[];
+	uint16_t len;			/* used */
+	uint16_t alloc;			/* excluding the header and null terminator */
+	unsigned char flags;	/* 3 lsb of type, 5 unused bits */
+	char buf[];
 };
 struct __attribute__ ((__packed__)) sdshdr32 {
-    uint32_t len; /* used */
-    uint32_t alloc; /* excluding the header and null terminator */
-    unsigned char flags; /* 3 lsb of type, 5 unused bits */
-    char buf[];
+	uint32_t len;			/* used */
+	uint32_t alloc;			/* excluding the header and null terminator */
+	unsigned char flags;	/* 3 lsb of type, 5 unused bits */
+	char buf[];
 };
 struct __attribute__ ((__packed__)) sdshdr64 {
-    uint64_t len; /* used */
-    uint64_t alloc; /* excluding the header and null terminator */
-    unsigned char flags; /* 3 lsb of type, 5 unused bits */
-    char buf[];
+	uint64_t len;           /* used */
+	uint64_t alloc;         /* excluding the header and null terminator */
+	unsigned char flags;    /* 3 lsb of type, 5 unused bits */
+	char buf[];
 };
 
 #define SDS_TYPE_5  0
@@ -81,138 +100,144 @@ struct __attribute__ ((__packed__)) sdshdr64 {
 #define SDS_TYPE_MASK 7
 #define SDS_TYPE_BITS 3
 #define SDS_HDR_VAR(T,s) struct sdshdr##T *sh = (void*)((s)-(sizeof(struct sdshdr##T)));
-#define SDS_HDR(T,s) ((struct sdshdr##T *)((s)-(sizeof(struct sdshdr##T))))
+#define SDS_HDR(T,s) ((struct sdshdr##T *)((s)-(sizeof(struct sdshdr##T))))	/* 获取SDS头的指针 */
 #define SDS_TYPE_5_LEN(f) ((f)>>SDS_TYPE_BITS)
 
+/* 获取sds的已使用空间的字节数（不包含'\0'） */
 static inline size_t sdslen(const sds s) {
-    unsigned char flags = s[-1];
-    switch(flags&SDS_TYPE_MASK) {
-        case SDS_TYPE_5:
-            return SDS_TYPE_5_LEN(flags);
-        case SDS_TYPE_8:
-            return SDS_HDR(8,s)->len;
-        case SDS_TYPE_16:
-            return SDS_HDR(16,s)->len;
-        case SDS_TYPE_32:
-            return SDS_HDR(32,s)->len;
-        case SDS_TYPE_64:
-            return SDS_HDR(64,s)->len;
-    }
-    return 0;
+	unsigned char flags = s[-1];	/* 往前偏移一个字节，即SDS头中的flags所在位置 */
+	switch(flags&SDS_TYPE_MASK) {
+		case SDS_TYPE_5:
+			return SDS_TYPE_5_LEN(flags);
+		case SDS_TYPE_8:
+			return SDS_HDR(8,s)->len;
+		case SDS_TYPE_16:
+			return SDS_HDR(16,s)->len;
+		case SDS_TYPE_32:
+			return SDS_HDR(32,s)->len;
+		case SDS_TYPE_64:
+			return SDS_HDR(64,s)->len;
+	}
+	return 0;
 }
 
+/* 获取sds的未使用空间的字节数（不包含'\0'） */
 static inline size_t sdsavail(const sds s) {
-    unsigned char flags = s[-1];
-    switch(flags&SDS_TYPE_MASK) {
-        case SDS_TYPE_5: {
-            return 0;
-        }
-        case SDS_TYPE_8: {
-            SDS_HDR_VAR(8,s);
-            return sh->alloc - sh->len;
-        }
-        case SDS_TYPE_16: {
-            SDS_HDR_VAR(16,s);
-            return sh->alloc - sh->len;
-        }
-        case SDS_TYPE_32: {
-            SDS_HDR_VAR(32,s);
-            return sh->alloc - sh->len;
-        }
-        case SDS_TYPE_64: {
-            SDS_HDR_VAR(64,s);
-            return sh->alloc - sh->len;
-        }
-    }
-    return 0;
+	unsigned char flags = s[-1];
+	switch(flags&SDS_TYPE_MASK) {
+		case SDS_TYPE_5: {
+			return 0;
+		}
+		case SDS_TYPE_8: {
+			SDS_HDR_VAR(8,s);
+			return sh->alloc - sh->len;
+		}
+		case SDS_TYPE_16: {
+			SDS_HDR_VAR(16,s);
+			return sh->alloc - sh->len;
+		}
+		case SDS_TYPE_32: {
+			SDS_HDR_VAR(32,s);
+			return sh->alloc - sh->len;
+		}
+		case SDS_TYPE_64: {
+			SDS_HDR_VAR(64,s);
+			return sh->alloc - sh->len;
+		}
+	}
+	return 0;
 }
 
+/* 将newlen设置成sds的已使用空间的字节数（不包含'\0'） */
 static inline void sdssetlen(sds s, size_t newlen) {
-    unsigned char flags = s[-1];
-    switch(flags&SDS_TYPE_MASK) {
-        case SDS_TYPE_5:
-            {
-                unsigned char *fp = ((unsigned char*)s)-1;
-                *fp = SDS_TYPE_5 | (newlen << SDS_TYPE_BITS);
-            }
-            break;
-        case SDS_TYPE_8:
-            SDS_HDR(8,s)->len = newlen;
-            break;
-        case SDS_TYPE_16:
-            SDS_HDR(16,s)->len = newlen;
-            break;
-        case SDS_TYPE_32:
-            SDS_HDR(32,s)->len = newlen;
-            break;
-        case SDS_TYPE_64:
-            SDS_HDR(64,s)->len = newlen;
-            break;
-    }
+	unsigned char flags = s[-1];
+	switch(flags&SDS_TYPE_MASK) {
+		case SDS_TYPE_5:
+			{
+				unsigned char *fp = ((unsigned char*)s)-1;
+				*fp = SDS_TYPE_5 | (newlen << SDS_TYPE_BITS);
+			}
+			break;
+		case SDS_TYPE_8:
+			SDS_HDR(8,s)->len = newlen;
+			break;
+		case SDS_TYPE_16:
+			SDS_HDR(16,s)->len = newlen;
+			break;
+		case SDS_TYPE_32:
+			SDS_HDR(32,s)->len = newlen;
+			break;
+		case SDS_TYPE_64:
+			SDS_HDR(64,s)->len = newlen;
+			break;
+	}
 }
 
+/* 将sds的已使用空间的字节数增加inc字节（不包含'\0'） */
 static inline void sdsinclen(sds s, size_t inc) {
-    unsigned char flags = s[-1];
-    switch(flags&SDS_TYPE_MASK) {
-        case SDS_TYPE_5:
-            {
-                unsigned char *fp = ((unsigned char*)s)-1;
-                unsigned char newlen = SDS_TYPE_5_LEN(flags)+inc;
-                *fp = SDS_TYPE_5 | (newlen << SDS_TYPE_BITS);
-            }
-            break;
-        case SDS_TYPE_8:
-            SDS_HDR(8,s)->len += inc;
-            break;
-        case SDS_TYPE_16:
-            SDS_HDR(16,s)->len += inc;
-            break;
-        case SDS_TYPE_32:
-            SDS_HDR(32,s)->len += inc;
-            break;
-        case SDS_TYPE_64:
-            SDS_HDR(64,s)->len += inc;
-            break;
-    }
+	unsigned char flags = s[-1];
+	switch(flags&SDS_TYPE_MASK) {
+		case SDS_TYPE_5:
+			{
+				unsigned char *fp = ((unsigned char*)s)-1;
+				unsigned char newlen = SDS_TYPE_5_LEN(flags)+inc;
+				*fp = SDS_TYPE_5 | (newlen << SDS_TYPE_BITS);
+			}
+			break;
+		case SDS_TYPE_8:
+			SDS_HDR(8,s)->len += inc;
+			break;
+		case SDS_TYPE_16:
+			SDS_HDR(16,s)->len += inc;
+			break;
+		case SDS_TYPE_32:
+			SDS_HDR(32,s)->len += inc;
+			break;
+		case SDS_TYPE_64:
+			SDS_HDR(64,s)->len += inc;
+			break;
+	}
 }
 
+/* 获取sds的申请空间的总字节数（不包含'\0'） */
 /* sdsalloc() = sdsavail() + sdslen() */
 static inline size_t sdsalloc(const sds s) {
-    unsigned char flags = s[-1];
-    switch(flags&SDS_TYPE_MASK) {
-        case SDS_TYPE_5:
-            return SDS_TYPE_5_LEN(flags);
-        case SDS_TYPE_8:
-            return SDS_HDR(8,s)->alloc;
-        case SDS_TYPE_16:
-            return SDS_HDR(16,s)->alloc;
-        case SDS_TYPE_32:
-            return SDS_HDR(32,s)->alloc;
-        case SDS_TYPE_64:
-            return SDS_HDR(64,s)->alloc;
-    }
-    return 0;
+	unsigned char flags = s[-1];
+	switch(flags&SDS_TYPE_MASK) {
+		case SDS_TYPE_5:
+			return SDS_TYPE_5_LEN(flags);
+		case SDS_TYPE_8:
+			return SDS_HDR(8,s)->alloc;
+		case SDS_TYPE_16:
+			return SDS_HDR(16,s)->alloc;
+		case SDS_TYPE_32:
+			return SDS_HDR(32,s)->alloc;
+		case SDS_TYPE_64:
+			return SDS_HDR(64,s)->alloc;
+	}
+	return 0;
 }
 
+/* 设置sds的申请空间的总字节数（不包含'\0'） */
 static inline void sdssetalloc(sds s, size_t newlen) {
-    unsigned char flags = s[-1];
-    switch(flags&SDS_TYPE_MASK) {
-        case SDS_TYPE_5:
-            /* Nothing to do, this type has no total allocation info. */
-            break;
-        case SDS_TYPE_8:
-            SDS_HDR(8,s)->alloc = newlen;
-            break;
-        case SDS_TYPE_16:
-            SDS_HDR(16,s)->alloc = newlen;
-            break;
-        case SDS_TYPE_32:
-            SDS_HDR(32,s)->alloc = newlen;
-            break;
-        case SDS_TYPE_64:
-            SDS_HDR(64,s)->alloc = newlen;
-            break;
-    }
+	unsigned char flags = s[-1];
+	switch(flags&SDS_TYPE_MASK) {
+		case SDS_TYPE_5:
+			/* Nothing to do, this type has no total allocation info. */
+			break;
+		case SDS_TYPE_8:
+			SDS_HDR(8,s)->alloc = newlen;
+			break;
+		case SDS_TYPE_16:
+			SDS_HDR(16,s)->alloc = newlen;
+			break;
+		case SDS_TYPE_32:
+			SDS_HDR(32,s)->alloc = newlen;
+			break;
+		case SDS_TYPE_64:
+			SDS_HDR(64,s)->alloc = newlen;
+			break;
+	}
 }
 
 sds sdsnewlen(const void *init, size_t initlen);
@@ -230,7 +255,7 @@ sds sdscpy(sds s, const char *t);
 sds sdscatvprintf(sds s, const char *fmt, va_list ap);
 #ifdef __GNUC__
 sds sdscatprintf(sds s, const char *fmt, ...)
-    __attribute__((format(printf, 2, 3)));
+	__attribute__((format(printf, 2, 3)));
 #else
 sds sdscatprintf(sds s, const char *fmt, ...);
 #endif
