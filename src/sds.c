@@ -41,6 +41,7 @@
 
 const char *SDS_NOINIT = "SDS_NOINIT";
 
+/* 根据指定SDS类型，返回SDS header结构的大小 */
 static inline int sdsHdrSize(char type) {
     switch(type&SDS_TYPE_MASK) {
         case SDS_TYPE_5:
@@ -57,6 +58,7 @@ static inline int sdsHdrSize(char type) {
     return 0;
 }
 
+/* 根据要生成的字符串大小，返回所需的SDS类型 */
 static inline char sdsReqType(size_t string_size) {
     if (string_size < 1<<5)
         return SDS_TYPE_5;
@@ -296,6 +298,7 @@ sds sdsRemoveFreeSpace(sds s) {
  * 3) The free buffer at the end if any.
  * 4) The implicit null term.
  */
+/* 返回SDS对象总的空间字节数 */
 size_t sdsAllocSize(sds s) {
     size_t alloc = sdsalloc(s);
     return sdsHdrSize(s[-1])+alloc+1;
@@ -409,6 +412,7 @@ sds sdscatlen(sds s, const void *t, size_t len) {
  *
  * After the call, the passed sds string is no longer valid and all the
  * references must be substituted with the new pointer returned by the call. */
+/* 追加C字符串 */
 sds sdscat(sds s, const char *t) {
     return sdscatlen(s, t, strlen(t));
 }
@@ -417,6 +421,7 @@ sds sdscat(sds s, const char *t) {
  *
  * After the call, the modified sds string is no longer valid and all the
  * references must be substituted with the new pointer returned by the call. */
+/* 追加SDS字符串 */
 sds sdscatsds(sds s, const sds t) {
     return sdscatlen(s, t, sdslen(t));
 }
@@ -701,6 +706,7 @@ sds sdscatfmt(sds s, char const *fmt, ...) {
  *
  * Output will be just "HelloWorld".
  */
+/* 接受一个SDS和一个C字符串，在SDS字符串左右两端分别去除在C字符串中出现过的字符 */
 sds sdstrim(sds s, const char *cset) {
     char *start, *end, *sp, *ep;
     size_t len;
@@ -785,6 +791,7 @@ void sdstoupper(sds s) {
  * If two strings share exactly the same prefix, but one of the two has
  * additional characters, the longer string is considered to be greater than
  * the smaller one. */
+/* SDS比较函数 */
 int sdscmp(const sds s1, const sds s2) {
     size_t l1, l2, minlen;
     int cmp;
@@ -1071,6 +1078,7 @@ err:
  *
  * The function returns the sds string pointer, that is always the same
  * as the input pointer since no resize is needed. */
+/* 根据所给符from和to的映射关系，替换SDS字符串中的对应字符 */
 sds sdsmapchars(sds s, const char *from, const char *to, size_t setlen) {
     size_t j, i, l = sdslen(s);
 
@@ -1087,6 +1095,7 @@ sds sdsmapchars(sds s, const char *from, const char *to, size_t setlen) {
 
 /* Join an array of C strings using the specified separator (also a C string).
  * Returns the result as an sds string. */
+/* 用指定分隔符插入C字符串的字符之间，构成一个SDS */
 sds sdsjoin(char **argv, int argc, char *sep) {
     sds join = sdsempty();
     int j;
@@ -1099,6 +1108,7 @@ sds sdsjoin(char **argv, int argc, char *sep) {
 }
 
 /* Like sdsjoin, but joins an array of SDS strings. */
+/* 用指定分隔符插入SDS字符串的字符之间，构成一个新的SDS */
 sds sdsjoinsds(sds *argv, int argc, const char *sep, size_t seplen) {
     sds join = sdsempty();
     int j;
@@ -1120,6 +1130,7 @@ void *sds_realloc(void *ptr, size_t size) { return s_realloc(ptr,size); }
 void sds_free(void *ptr) { s_free(ptr); }
 
 #if defined(SDS_TEST_MAIN)
+/* 下面的内容可以算是“单元测试” */
 #include <stdio.h>
 #include "testhelp.h"
 #include "limits.h"

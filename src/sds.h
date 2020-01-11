@@ -47,22 +47,26 @@ const char *SDS_NOINIT;
 typedef char *sds;
 
 /**
- * 设计SDS时加入：
- * len：	可以使获取长度函数所需的时间复杂度降低到O(1)，还能保证二进制安全（binary-safe），不会像C语言字
- *			符串一样，因为'\0'而提前结束，能保证读取指定len长度的数据。可以拿来存储任意类型的二进制。
- * alloc：	用于表示当前SDS对象申请了多少的空间用于存储字符串（不包含头和'\0'）。
+ * 设计SDS时：
+ * len：	用于表示当前sds已经使用空间的字节数。可以使获取长度函数所需的时间复杂度降低到O(1)，还能保证二进制安
+ * 			全（binary-safe），不会像C语言字符串一样，因为'\0'而提前结束，能保证读取指定len长度的数据。sds可
+ * 			以拿来存储任意类型的二进制。
+ * alloc：	用于表示当前SDS对象申请了多少的空间用于存储字符串（不包含头和'\0'）。例如buf申请了（20+1位'\0'）字
+ * 			节的空间，则`alloc`为20。
  * flags：	低3位用于表示当前SDS的类型，高5位保留。
  * buf[]：	灵活数组类型是C99引入的语言特性。即在struct数据类型的最后一个数据成员，可以为一个未指明长度的数组
  * 			类型。它在这里只是起到一个标记的作用，表示在flags字段后面就是一个字符数组，或者说，它指明了紧跟在
  * 			flags字段后面的这个字符数组在结构体中的偏移位置。而程序在为header分配的内存的时候，它并不占用内存
  * 			空间。
  * 
- * 注：__attribute__ ((__packed__))的作用就是告诉编译器取消结构在编译过程中的优化对齐，按照实际占用字节数进行对齐。
- * 注：SDS会在保存的数据末尾自动设置'\0'空字符，这样在做某些字符串比较时，可以直接使用C语言中的字符串比较函数。
+ * 注1：例如sds s；s默认指向buf[]成员的位置。
+ * 注2：__attribute__ ((__packed__))的作用就是告诉编译器取消结构在编译过程中的优化对齐，按照实际占用字节数进行对齐。
+ * 注3：SDS会在保存的数据末尾自动设置'\0'空字符，这样在做某些字符串比较时，可以直接使用C语言中的字符串比较函数。
  */
 
 /* Note: sdshdr5 is never used, we just access the flags byte directly.
  * However is here to document the layout of type 5 SDS strings. */
+/* sdshdr5 从未用到 */
 struct __attribute__ ((__packed__)) sdshdr5 {
 	unsigned char flags; /* 3 lsb of type, and 5 msb of string length */
 	char buf[];

@@ -1,5 +1,10 @@
+*.o
 *.gcda
 *.gcno
 *.gcov
 redis.info
 lcov-html
+Makefile.dep
+redis-check-aof
+redis-server
+release.h
