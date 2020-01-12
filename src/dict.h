@@ -44,41 +44,50 @@
 /* Unused arguments generate annoying warnings... */
 #define DICT_NOTUSED(V) ((void) V)
 
+/* 哈希表节点，每个dictEntry结构都保存着一个键值对 */
 typedef struct dictEntry {
-    void *key;
-    union {
+    void *key;      // 键
+    union {         // 值
         void *val;
         uint64_t u64;
         int64_t s64;
         double d;
     } v;
-    struct dictEntry *next;
+    struct dictEntry *next; // 指向下一个哈希表节点，用于解决键冲突
 } dictEntry;
 
 typedef struct dictType {
+    /* 计算hash值的函数 */
     uint64_t (*hashFunction)(const void *key);
+    /* 复制键的函数 */
     void *(*keyDup)(void *privdata, const void *key);
+    /* 复制值的函数 */
     void *(*valDup)(void *privdata, const void *obj);
+    /* 对比键的函数 */
     int (*keyCompare)(void *privdata, const void *key1, const void *key2);
+    /* 销毁键的函数 */
     void (*keyDestructor)(void *privdata, void *key);
+    /* 销毁值的函数 */
     void (*valDestructor)(void *privdata, void *obj);
 } dictType;
 
 /* This is our hash table structure. Every dictionary has two of this as we
  * implement incremental rehashing, for the old to the new table. */
+/* 哈希表 */
 typedef struct dictht {
-    dictEntry **table;
-    unsigned long size;
-    unsigned long sizemask;
-    unsigned long used;
+    dictEntry **table;      // 哈希表节点数组
+    unsigned long size;     // 哈希表大小
+    unsigned long sizemask; // 哈希表大小掩码，用于计算索引值，总是等于size-1
+    unsigned long used;     // 该hash表已有节点的数量
 } dictht;
 
+/* 字典 */
 typedef struct dict {
-    dictType *type;
-    void *privdata;
-    dictht ht[2];
-    long rehashidx; /* rehashing not in progress if rehashidx == -1 */
-    unsigned long iterators; /* number of iterators currently running */
+    dictType *type;     // 特定于类型的处理函数
+    void *privdata;     // 类型处理函数的私有数据
+    dictht ht[2];       // 哈希表
+    long rehashidx;     /* rehash索引，当没进行rehash时，值为-1 */ /* rehashing not in progress if rehashidx == -1 */
+    unsigned long iterators; /* 当前正在运行的迭代器数量 */ /* number of iterators currently running */
 } dict;
 
 /* If safe is set to 1 this is a safe iterator, that means, you can call
@@ -137,6 +146,7 @@ typedef void (dictScanBucketFunction)(void *privdata, dictEntry **bucketref);
         (d)->type->keyCompare((d)->privdata, key1, key2) : \
         (key1) == (key2))
 
+// 计算hash值
 #define dictHashKey(d, key) (d)->type->hashFunction(key)
 #define dictGetKey(he) ((he)->key)
 #define dictGetVal(he) ((he)->v.val)
@@ -145,6 +155,7 @@ typedef void (dictScanBucketFunction)(void *privdata, dictEntry **bucketref);
 #define dictGetDoubleVal(he) ((he)->v.d)
 #define dictSlots(d) ((d)->ht[0].size+(d)->ht[1].size)
 #define dictSize(d) ((d)->ht[0].used+(d)->ht[1].used)
+// 是否正在rehash
 #define dictIsRehashing(d) ((d)->rehashidx != -1)
 
 /* API */

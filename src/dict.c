@@ -59,8 +59,13 @@
  * Note that even when dict_can_resize is set to 0, not all resizes are
  * prevented: a hash table is still allowed to grow if the ratio between
  * the number of elements and the buckets > dict_force_resize_ratio. */
-static int dict_can_resize = 1;
-static unsigned int dict_force_resize_ratio = 5;
+/* 1. 服务器没有执行bgsave或bgrewriteaof操作(dict_can_resize=1)，当hash表中元素的个数大于等
+ *    于ht[0].size时，就会开始扩容，扩容的新数组的大小为第一个不小于(ht[0].size * 2)的2^n的数。
+ * 2. 如果Redis正在做bgsave，为了减少内存页的过多分离 (Copy On Write)，Redis尽量不去扩容
+ *    (dict_can_resize=0)。但是当元素的个数已经达到了ht[0].size的5倍 (dict_force_resize_ratio)，
+ *    说明hash表已经过于拥挤了，这个时候就会强制扩容。 */
+static int dict_can_resize = 1; /* 该变量决定是否根据需要扩容 */
+static unsigned int dict_force_resize_ratio = 5;    /* 强制扩容的条件 */
 
 /* -------------------------- private prototypes ---------------------------- */
 
@@ -71,6 +76,7 @@ static int _dictInit(dict *ht, dictType *type, void *privDataPtr);
 
 /* -------------------------- hash functions -------------------------------- */
 
+/* 设置随机种子和获取随机种子 */
 static uint8_t dict_hash_function_seed[16];
 
 void dictSetHashFunctionSeed(uint8_t *seed) {
@@ -99,6 +105,8 @@ uint64_t dictGenCaseHashFunction(const unsigned char *buf, int len) {
 
 /* Reset a hash table already initialized with ht_init().
  * NOTE: This function should only be called by ht_destroy(). */
+/* 上面的NOTE有点问题，其实也用在初始化函数中了 */
+/* 重置哈希表ht */
 static void _dictReset(dictht *ht)
 {
     ht->table = NULL;
@@ -108,6 +116,7 @@ static void _dictReset(dictht *ht)
 }
 
 /* Create a new hash table */
+/* 创建一个新的字典 */
 dict *dictCreate(dictType *type,
         void *privDataPtr)
 {
@@ -118,6 +127,7 @@ dict *dictCreate(dictType *type,
 }
 
 /* Initialize the hash table */
+/* 初始化字典数据结构 */
 int _dictInit(dict *d, dictType *type,
         void *privDataPtr)
 {
@@ -132,6 +142,7 @@ int _dictInit(dict *d, dictType *type,
 
 /* Resize the table to the minimal size that contains all the elements,
  * but with the invariant of a USED/BUCKETS ratio near to <= 1 */
+ /* 调整字典总容量，使之接近实际使用容量 */
 int dictResize(dict *d)
 {
     int minimal;
@@ -144,6 +155,7 @@ int dictResize(dict *d)
 }
 
 /* Expand or create the hash table */
+/* 命名为扩容（并不准确，缩容也通过该函数） */
 int dictExpand(dict *d, unsigned long size)
 {
     /* the size is invalid if it is smaller than the number of
@@ -171,6 +183,7 @@ int dictExpand(dict *d, unsigned long size)
     }
 
     /* Prepare a second hash table for incremental rehashing */
+    /* rehash前会使用dictExpand这个函数产生一个哈希表 */
     d->ht[1] = n;
     d->rehashidx = 0;
     return DICT_OK;
@@ -185,6 +198,7 @@ int dictExpand(dict *d, unsigned long size)
  * guaranteed that this function will rehash even a single bucket, since it
  * will visit at max N*10 empty buckets in total, otherwise the amount of
  * work it does would be unbound and the function may block for a long time. */
+/* 重哈希 */
 int dictRehash(dict *d, int n) {
     int empty_visits = n*10; /* Max number of empty buckets to visit. */
     if (!dictIsRehashing(d)) return 0;
@@ -262,6 +276,7 @@ static void _dictRehashStep(dict *d) {
 }
 
 /* Add an element to the target hash table */
+/* 在字典中加入一个键值对 */
 int dictAdd(dict *d, void *key, void *val)
 {
     dictEntry *entry = dictAddRaw(d,key,NULL);
@@ -539,6 +554,7 @@ long long dictFingerprint(dict *d) {
     return hash;
 }
 
+/* 获取字典的迭代器对象 */
 dictIterator *dictGetIterator(dict *d)
 {
     dictIterator *iter = zmalloc(sizeof(*iter));
@@ -559,6 +575,7 @@ dictIterator *dictGetSafeIterator(dict *d) {
     return i;
 }
 
+/* 根据提供的迭代器获取下一个键值对 */
 dictEntry *dictNext(dictIterator *iter)
 {
     while (1) {
@@ -594,6 +611,7 @@ dictEntry *dictNext(dictIterator *iter)
     return NULL;
 }
 
+/* 释放迭代器 */
 void dictReleaseIterator(dictIterator *iter)
 {
     if (!(iter->index == -1 && iter->table == 0)) {
@@ -741,6 +759,7 @@ unsigned int dictGetSomeKeys(dict *d, dictEntry **des, unsigned int count) {
 
 /* Function to reverse bits. Algorithm from:
  * http://graphics.stanford.edu/~seander/bithacks.html#ReverseParallel */
+ /* 将二进制逆序 */
 static unsigned long rev(unsigned long v) {
     unsigned long s = 8 * sizeof(v); // bit size; must be power of 2
     unsigned long mask = ~0;
@@ -919,6 +938,7 @@ unsigned long dictScan(dict *d,
 /* ------------------------- private functions ------------------------------ */
 
 /* Expand the hash table if needed */
+/* 根据需要对字典进行扩容 */
 static int _dictExpandIfNeeded(dict *d)
 {
     /* Incremental rehashing already in progress. Return. */
@@ -941,6 +961,7 @@ static int _dictExpandIfNeeded(dict *d)
 }
 
 /* Our hash table capability is a power of two */
+/* 确定扩容和缩容的容量（2^n），找到第一个大于等于size的2的n次幂的数并返回 */
 static unsigned long _dictNextPower(unsigned long size)
 {
     unsigned long i = DICT_HT_INITIAL_SIZE;
@@ -985,6 +1006,7 @@ static long _dictKeyIndex(dict *d, const void *key, uint64_t hash, dictEntry **e
     return idx;
 }
 
+/* 清空字典 */
 void dictEmpty(dict *d, void(callback)(void*)) {
     _dictClear(d,&d->ht[0],callback);
     _dictClear(d,&d->ht[1],callback);
