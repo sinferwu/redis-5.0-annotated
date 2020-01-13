@@ -198,7 +198,12 @@ int dictExpand(dict *d, unsigned long size)
  * guaranteed that this function will rehash even a single bucket, since it
  * will visit at max N*10 empty buckets in total, otherwise the amount of
  * work it does would be unbound and the function may block for a long time. */
-/* 重哈希 */
+/* 重哈希，整个rehash过程完成返回0，否则返回1。
+ * 每次调用该函数会因为两种情况，任意一种情况发生即返回
+ * 1. rehash了n个非空bucket（1个bucket对应一个键，每个键对应一个链表）
+ * 2. 访问了n*10个空bucket
+ * 如果不限制访问空bucket的次数，可能会让这个函数运行很久。
+ */
 int dictRehash(dict *d, int n) {
     int empty_visits = n*10; /* Max number of empty buckets to visit. */
     if (!dictIsRehashing(d)) return 0;
@@ -232,6 +237,7 @@ int dictRehash(dict *d, int n) {
     }
 
     /* Check if we already rehashed the whole table... */
+    /* 迁移全部完成后，释放哈希表ht[0]，并将ht[1]设置成ht[0]，然后为ht[1]设置空表 */
     if (d->ht[0].used == 0) {
         zfree(d->ht[0].table);
         d->ht[0] = d->ht[1];
@@ -244,6 +250,7 @@ int dictRehash(dict *d, int n) {
     return 1;
 }
 
+/* 返回当前时间的微秒值 */
 long long timeInMilliseconds(void) {
     struct timeval tv;
 
@@ -252,6 +259,7 @@ long long timeInMilliseconds(void) {
 }
 
 /* Rehash for an amount of time between ms milliseconds and ms+1 milliseconds */
+/* 渐进式rehash，每ms微秒运行一次rehash100个桶的操作，直到rehash整个表完成 */
 int dictRehashMilliseconds(dict *d, int ms) {
     long long start = timeInMilliseconds();
     int rehashes = 0;
@@ -271,6 +279,7 @@ int dictRehashMilliseconds(dict *d, int ms) {
  * This function is called by common lookup or update operations in the
  * dictionary so that the hash table automatically migrates from H1 to H2
  * while it is actively used. */
+/*  */
 static void _dictRehashStep(dict *d) {
     if (d->iterators == 0) dictRehash(d,1);
 }
@@ -304,6 +313,10 @@ int dictAdd(dict *d, void *key, void *val)
  *
  * If key was added, the hash entry is returned to be manipulated by the caller.
  */
+/* 增加键值对操作的底层实现
+ * 1. 首先需要判断该键值对是否存在：如果没在rehash，只查找表0；正在rehash，顺序查找表0和表1；
+ * 2. 若不存在，则进行插入操作：如果没在rehash，插入表0；正在rehash，插入表1；
+ */
 dictEntry *dictAddRaw(dict *d, void *key, dictEntry **existing)
 {
     long index;
@@ -314,6 +327,7 @@ dictEntry *dictAddRaw(dict *d, void *key, dictEntry **existing)
 
     /* Get the index of the new element, or -1 if
      * the element already exists. */
+    /* 首先需要判断该键值对是否存在 */
     if ((index = _dictKeyIndex(d, key, dictHashKey(d,key), existing)) == -1)
         return NULL;
 
@@ -321,6 +335,7 @@ dictEntry *dictAddRaw(dict *d, void *key, dictEntry **existing)
      * Insert the element in top, with the assumption that in a database
      * system it is more likely that recently added entries are accessed
      * more frequently. */
+    /* 根据rehash状态，决定插入哪个表 */
     ht = dictIsRehashing(d) ? &d->ht[1] : &d->ht[0];
     entry = zmalloc(sizeof(*entry));
     entry->next = ht->table[index];
@@ -337,6 +352,10 @@ dictEntry *dictAddRaw(dict *d, void *key, dictEntry **existing)
  * Return 1 if the key was added from scratch, 0 if there was already an
  * element with such key and dictReplace() just performed a value update
  * operation. */
+/* 增加或覆盖键值对
+ * 1. 实际操作为新增，返回1
+ * 2. 实际操作为覆盖，返回0
+ */
 int dictReplace(dict *d, void *key, void *val)
 {
     dictEntry *entry, *existing, auxentry;
@@ -481,6 +500,7 @@ int _dictClear(dict *d, dictht *ht, void(callback)(void *)) {
 }
 
 /* Clear & Release the hash table */
+/* 释放字典 */
 void dictRelease(dict *d)
 {
     _dictClear(d,&d->ht[0],NULL);
